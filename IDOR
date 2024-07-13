@@ -1,0 +1,262 @@
+
+=========================================================================================================================================================
+====================================================== I ========= D =========== O ========== R =========================================================
+=========================================================================================================================================================
+
+
+
+
+[+] IDORs happen when an application fails at two things.------------------------------------------------------------------------
+
+1.First, it fails to implement access control based on user identity. 
+2.Second, it fails to randomize object IDs and instead keeps references to data objects, like a file or a database
+entry, predictable.
+e.g; 
+since user IDs are simply numbers, it’s easy to infer that
+you can also retrieve the messages for user 1232 and user 1231, like so:
+https://example.com/messages?user_id=1232
+https://example.com/messages?user_id=1231
+
+####these predictable direct
+object references expose the data hidden behind them, allowing anyone to
+grab the information associated with the reference.
+
+
+
+[+] Applications can prevent IDORs in two ways.------------------------------------------------------------------------
+
+**First, the application can check the user’s identity and permissions before granting access to a resource.
+**Second, the website can use a unique, unpredictable key or a hashed identifier to reference each user’s resources. 
+****The best way to protect against IDORs is fine-grained access control, or a combination of access control and randomization or hashing of IDs.
+
+
+
+
+
+
+============================================================================================================================
+                                              Hunting for IDORs
+============================================================================================================================
+
+
+
+[The best way to discover IDORs is through a source code review that checks if all direct object references are protected by access control.]
+BUT if u don't have access to source code then look below!--->;
+
+
+Step 1: Create Two Accounts-------------------------------------------------------------------------------------------
+First, create two different accounts on the target website. If users can have
+different permissions on the site, create two accounts for each permission
+level. For example, create two admin accounts, two regular user accounts,
+two group member accounts, and two non-group-member accounts. & use   one of as  ###victim###  and @@@ttacker!! 
+
+https://example.com/messages?user_id=1235(Victim)
+https://example.com/messages?user_id=1236(Attacker)
+
+NOTE: If the application doesn’t allow you to create so many accounts, you
+could reach out to the company and ask for more accounts. Companies will
+often grant you extra accounts if you explain that you’re participating in
+their bug bounty program. Also, if the application has paid memberships,
+ask the company for a premium account or pay for one yourself. Quite
+often, paying for these memberships is worth it, because you gain access to
+new features to test.
+
+
+
+Step 2: Discover Features-------------------------------------------------------------------------------------------
+Pay special attention to functionalities that return user information or modify user data.
+
+***Note given features for future reference might have IDOR. 
+This endpoint lets you read user messages:
+https://example.com/messages?user_id=1236
+
+This one lets you read user files:
+https://example.com/uploads?file=user1236-01.jpeg
+
+This endpoint deletes user messages:
+POST /delete_message
+(POST request body)
+message_id=user1236-0111
+
+This one is for accessing group files:
+https://example.com/group_files?group=group3
+This one deletes a group:
+POST /delete_group
+(POST request body)
+group=group3
+
+
+
+Step 3: Capture Requests-------------------------------------------------------------------------------------------
+
+Inspect each request like parameters contain  --> [ numbers, usernames, or IDs ]
+Remember that you can trigger IDORs from different locations
+within a request, [ URL parameters, form fields, filepaths, headers, and cookies. ]
+
+For testing  efficient, use two browsers, and log into a different account in each.
+For example, let’s say you create two accounts, 1235 and 1236. Log into 1235 in Firefox and 1236 in Chrome.
+
+****** note that APIs like Representational State Transfer (REST) and GraphQL can lead to IDOR TOO.....
+
+
+
+
+Step 4: Change the IDs-------------------------------------------------------------------------------------------
+
+Finally, switch the IDs in the sensitive requests and check if the information
+returned also changes. 
+
+
+
+
+
+
+
+
+============================================================================================================================
+                                      Bypassing IDOR Protection
+============================================================================================================================
+IDORs can manifest in applications in different ways. Here are a few
+places to pay attention to, beyond your plain old numeric IDs.
+
+
+
+---[+]--Encoded IDs and Hashed IDs:----------------------------------
+First, don’t ignore encoded and hashed IDs [ base64, URL encoding, and base64url.]
+https://example.com/messages?user_id=MTIzNQ
+https://example.com/messages?user_id=MTIzNg
+These are  base64url-encoded version of a user’s ID
+
+You might not be able  which encoding scheme the site is using at
+first. In this case, use the  #### Smart Decode tool ####  in Burp’s decoder,
+or simply try to decode the string with different schemes (URL encoding, HTML encoding, hex encoding, octal encoding, base64, base64url, and so on) 
+With expericence will know encoding scheme suspecious.....! 
+
+****Sometimes applications use algorithms that produce insufficient entropy. 
+Entropy is the degree of randomness of the ID. The higher the entropy of a string, the harder it is to guess. [ create various accounts and observe the pattern on it ] 
+
+
+
+
+---[+]--Leaked IDs--------------------------------------------------------
+
+It might also be possible that the application leaks IDs via another API end-
+point or other public pages of the application, like the profile page of a user.
+
+
+
+
+---[+]--Offer the Application an ID, Even If It Doesn’t Ask for One-------------------------------------------------------
+In modern web applications, you’ll commonly encounter scenarios in which
+the application uses cookies instead of IDs to identify the resources a user
+can access.
+e.g; 
+GET /api_v1/messages
+Then maybe this request would display another user’s messages instead:
+GET /api_v1/messages?user_id=ANOTHER_USERS_ID
+
+
+
+---[+]--Keep an Eye Out for Blind IDORs------------------------------------------------------------------------------
+
+sometimes endpoints susceptible to IDOR don’t respond with the
+leaked information directly. They might lead the application to leak infor-
+mation elsewhere, instead: in export files, email, and maybe even in text alerts
+
+
+
+---[+]--Change the Request Method---------------------------------------------------------------------
+
+use GET, POST, PUT, DELETE, PATCH, and so on.
+
+
+
+---[+]--Change the Requested File Type---------------------------------------------------------------
+
+Switching the file type of the requested file sometimes leads the server to
+process the authorization differently. 
+e.g;
+For example, applications commonly store information in the  ***** JSON file type ******. 
+Try adding the .json extension to the end of the request URL and see
+what happens. If this request is blocked by the server
+GET /get_receipt?receipt_id=2983
+then try this one instead:
+GET /get_receipt?receipt_id=2983.json
+
+
+
+
+
+
+
+============================================================================================================================
+                                          Escalating the Attack
+============================================================================================================================
+
+
+The impact of an IDOR depends on the affected function, to maximize
+the severity of your bugs, you should always look for IDORs in critical func-
+tionalities first. 
+**Both read-based IDORs (which leak information but do not alter the database) 
+**write-based IDORs (which can alter the database in an unauthorized way) can be of high impact.
+
+===***=== state-changing --->,  write-based IDORs, look for IDORs in
+password reset, password change, and account recovery features, as these
+often have the highest business impact
+
+===***===  non-state-changing --->(read-based) IDORs, look for functional-
+ities that handle the sensitive information in the application. For example,
+look for functionalities that handle direct messages, personal information,
+and private content.
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++You can also combine IDORs with other vulnerabilities. +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+For example,
+**write-based IDOR combind with self-XSS --->  stored XSS.
+An IDOR on a password reset endpoint combined with username enumeration ---> mass account takeover.
+Or a
+write IDOR on an admin account may even lead to RCE!
+
+
+
+
+
+============================================================================================================================
+                                            Automating the Attack
+============================================================================================================================
+
+[=] The Burp extension Autorize (https://github.com/Quitten/Autorize/) scans for authorization issues by
+accessing higher-privileged accounts with lower-privileged accounts, whereas
+
+[=] The Burp extensions Auto Repeater (https://github.com/nccgroup/AutoRepeater/)
+    -      -     -      -   AuthMatrix (https://github.com/SecurityInnovation/AuthMatrix/) allow you to automate the process of switching out cookies, headers, and parameters.
+[ For more information on how to use these tools, go to the Extender tab of your Burp window, then to the BAppStore tab to find the extension you want to use. ]
+
+
+
+
+============================================================================================================================
+                                    Finding Your First IDOR!
+============================================================================================================================
+
+
+1. Create two accounts for each application role and designate one as the attacker account and the other as the victim account.
+2. Discover features in the application that might lead to IDORs. Pay attention to features that return sensitive information or modify user data.
+3. Revisit the features you discovered in step 2. With a proxy, intercept your browser traffic while you browse through the sensitive functionalities.
+4. With a proxy, intercept each sensitive request and switch out the IDs that you see in the requests. If switching out IDs grants you access to other users’ information or lets you change their data, you might have found an IDOR.
+5. Don’t despair if the application seems to be immune to IDORs. Use this opportunity to try a protection-bypass technique! If the application uses an encoded, hashed, or randomized ID, you can try decoding
+    or predicting the IDs. You can also try supplying the application with an ID when it does not ask for one. Finally, sometimes changing the request method type or file type makes all the difference.
+6. Monitor for information leaks in export files, email, and text alerts. An IDOR now might lead to an info leak in the future.
+7. Draft your first IDOR report!
+
+
+Note: For better understand prefer to read reports ( https://hackerone.com/reports/135989/ )  and writeups  etc, or practice on portswigger labs or any other platform!
+     Fire up the knowledge u get nd  JUST DO IT NOW!!!!!!!!!!!!!!!!!!!!!! :)
+
+
+
+
+
+
